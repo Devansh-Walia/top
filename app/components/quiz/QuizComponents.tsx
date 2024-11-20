@@ -49,12 +49,23 @@ export function DraggableComponent({
     onAdd(type);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onAdd(type);
+    }
+  };
+
   return (
     <div
+      role="button"
+      tabIndex={0}
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      aria-label={`Add ${label} component`}
       className={`p-3 bg-white rounded-lg shadow cursor-pointer hover:shadow-md transition-all border border-gray-200 
         ${
           isDragging
@@ -149,22 +160,96 @@ export function DroppedComponent({
   onSelect,
 }: DroppedComponentProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   const handleDragStart = (e: React.DragEvent) => {
     setIsDragging(true);
+
+    // Calculate offset from mouse position to component top-left corner
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+
     e.dataTransfer.setData(
       "application/json",
-      JSON.stringify({ id: component.id })
+      JSON.stringify({
+        id: component.id,
+        offset: {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        },
+      })
     );
+
+    // Set drag image
+    const ghost = e.currentTarget.cloneNode(true) as HTMLElement;
+    ghost.style.position = "absolute";
+    ghost.style.top = "-1000px";
+    ghost.style.opacity = "0.5";
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, dragOffset.x, dragOffset.y);
+
+    setTimeout(() => document.body.removeChild(ghost), 0);
   };
 
-  const handleDragEnd = () => {
+  const handleDrag = (e: React.DragEvent) => {
+    if (!e.clientX || !e.clientY) return; // Ignore invalid drag events
+
+    const x = e.clientX - dragOffset.x;
+    const y = e.clientY - dragOffset.y;
+
+    // Update component position through parent handler
+    onMove(component.id, { x, y });
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
     setIsDragging(false);
+
+    if (!e.clientX || !e.clientY) return; // Ignore invalid drag events
+
+    const x = e.clientX - dragOffset.x;
+    const y = e.clientY - dragOffset.y;
+
+    // Ensure final position is updated
+    onMove(component.id, { x, y });
   };
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onSelect?.();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelect?.();
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      onDelete(component.id);
+    } else if (e.key.startsWith("Arrow")) {
+      e.preventDefault();
+      const STEP = 10;
+      const newPosition = { ...component.position };
+
+      switch (e.key) {
+        case "ArrowLeft":
+          newPosition.x -= STEP;
+          break;
+        case "ArrowRight":
+          newPosition.x += STEP;
+          break;
+        case "ArrowUp":
+          newPosition.y -= STEP;
+          break;
+        case "ArrowDown":
+          newPosition.y += STEP;
+          break;
+      }
+
+      onMove(component.id, newPosition);
+    }
   };
 
   const getComponentContent = () => {
@@ -235,16 +320,22 @@ export function DroppedComponent({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       draggable
       onDragStart={handleDragStart}
+      onDrag={handleDrag}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      aria-label={`${component.type} component`}
       style={{
         position: "absolute",
         left: component.position.x,
         top: component.position.y,
         opacity: isDragging ? 0.5 : 1,
         cursor: "move",
+        transform: `translate(${isDragging ? "-50%, -50%" : "0, 0"})`,
       }}
       className={`min-w-[100px] group ${
         isDragging ? "ring-2 ring-purple-500" : ""
@@ -257,6 +348,7 @@ export function DroppedComponent({
           e.stopPropagation();
           onDelete(component.id);
         }}
+        aria-label="Delete component"
         className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-600"
       >
         ×
