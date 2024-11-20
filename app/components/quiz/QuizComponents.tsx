@@ -22,23 +22,12 @@ export function DraggableComponent({
 }: DraggableComponentProps) {
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleDragStart = (e: React.DragEvent) => {
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     setIsDragging(true);
     onDragStart(type, e);
 
-    // Create a ghost image
-    const ghost = document.createElement("div");
-    ghost.className =
-      "bg-white p-3 rounded-lg shadow-lg border-2 border-purple-500";
-    ghost.innerHTML = label;
-    document.body.appendChild(ghost);
-    ghost.style.position = "absolute";
-    ghost.style.top = "-1000px";
-    e.dataTransfer.setDragImage(ghost, 0, 0);
-
-    setTimeout(() => {
-      document.body.removeChild(ghost);
-    }, 0);
+    // Use the dragged element itself as the drag image
+    e.dataTransfer.setDragImage(e.currentTarget, 0, 0);
   };
 
   const handleDragEnd = () => {
@@ -160,60 +149,76 @@ export function DroppedComponent({
   onSelect,
 }: DroppedComponentProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 });
+  const [dragStartMousePosition, setDragStartMousePosition] = useState({
+    x: 0,
+    y: 0,
+  });
+  const [emptyImage] = useState(() => {
+    const img = new Image();
+    img.src =
+      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    return img;
+  });
 
-  const handleDragStart = (e: React.DragEvent) => {
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     setIsDragging(true);
 
-    // Calculate offset from mouse position to component top-left corner
-    const rect = e.currentTarget.getBoundingClientRect();
-    setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+    // Store the initial component position
+    setDragStartPosition({
+      x: component.position.x,
+      y: component.position.y,
+    });
+
+    // Store the initial mouse position
+    setDragStartMousePosition({
+      x: e.clientX,
+      y: e.clientY,
     });
 
     e.dataTransfer.setData(
       "application/json",
       JSON.stringify({
         id: component.id,
-        offset: {
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
+        initialPosition: component.position,
+        mouseOffset: {
+          x: e.clientX - component.position.x,
+          y: e.clientY - component.position.y,
         },
       })
     );
 
-    // Set drag image
-    const ghost = e.currentTarget.cloneNode(true) as HTMLElement;
-    ghost.style.position = "absolute";
-    ghost.style.top = "-1000px";
-    ghost.style.opacity = "0.5";
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, dragOffset.x, dragOffset.y);
-
-    setTimeout(() => document.body.removeChild(ghost), 0);
+    // Set empty image as drag image to prevent ghost
+    e.dataTransfer.setDragImage(emptyImage, 0, 0);
   };
 
-  const handleDrag = (e: React.DragEvent) => {
+  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
     if (!e.clientX || !e.clientY) return; // Ignore invalid drag events
 
-    const x = e.clientX - dragOffset.x;
-    const y = e.clientY - dragOffset.y;
+    // Calculate the delta from the start position
+    const deltaX = e.clientX - dragStartMousePosition.x;
+    const deltaY = e.clientY - dragStartMousePosition.y;
 
-    // Update component position through parent handler
-    onMove(component.id, { x, y });
+    // Apply the delta to the original position
+    const newX = dragStartPosition.x + deltaX;
+    const newY = dragStartPosition.y + deltaY;
+
+    onMove(component.id, { x: newX, y: newY });
   };
 
-  const handleDragEnd = (e: React.DragEvent) => {
+  const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
     setIsDragging(false);
 
     if (!e.clientX || !e.clientY) return; // Ignore invalid drag events
 
-    const x = e.clientX - dragOffset.x;
-    const y = e.clientY - dragOffset.y;
+    // Calculate final position using the same delta method
+    const deltaX = e.clientX - dragStartMousePosition.x;
+    const deltaY = e.clientY - dragStartMousePosition.y;
 
-    // Ensure final position is updated
-    onMove(component.id, { x, y });
+    const finalX = dragStartPosition.x + deltaX;
+    const finalY = dragStartPosition.y + deltaY;
+
+    onMove(component.id, { x: finalX, y: finalY });
   };
 
   const handleClick = (e: React.MouseEvent) => {
@@ -335,7 +340,6 @@ export function DroppedComponent({
         top: component.position.y,
         opacity: isDragging ? 0.5 : 1,
         cursor: "move",
-        transform: `translate(${isDragging ? "-50%, -50%" : "0, 0"})`,
       }}
       className={`min-w-[100px] group ${
         isDragging ? "ring-2 ring-purple-500" : ""
